@@ -124,9 +124,8 @@ docker-buildx-plugin docker-compose-plugin
 5) Choose application to install, I chose Uptime Kuma (https://github.com/louislam/uptime-kuma/wiki/%F0%9F%94%A7-How-to-Install)
 	1) ```sudo mkdir -p /opt/uptime-kuma```
 	2) ```cd /opt/uptime-kuma```
-	3) ``````sudo nano compose.yaml```
-	4) Write: 
-	   ```services:
+	3) ```sudo nano compose.yaml```
+	4) Write: ```services:
   uptime-kuma:
     image: louislam/uptime-kuma:2
     container_name: uptime-kuma
@@ -134,8 +133,7 @@ docker-buildx-plugin docker-compose-plugin
     ports:
       - "3001:3001"
     volumes:
-      - ./data:/app/data
-```
+      - ./data:/app/data```
 6) Deploy using ```sudo docker compose up -d```
 7) Check status using ```sudo docker ps```
 8) Go to http://[ipaddress]:3001 
