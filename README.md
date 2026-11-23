@@ -1,6 +1,6 @@
 # gavinn0715-ui.github.io
 
-## Description
+## Arch Install Description
 
 This is the basic documentation for my Arch Installation project in System Administation. This is not a full guide to installing Arch, but a brief overview of what I did to get Arch to run on my system. 
 
@@ -95,3 +95,141 @@ This is the basic documentation for my Arch Installation project in System Admin
 	1. ```alias c ='clear'```
 	2.  ```alias ping ='ping -c 5'```
 	3.  ```alias``` to check which aliases are active
+
+ 
+## Docker
+
+## Documentation
+
+1) Before making any changes, go to Proxmox and create a snapshot named "pre-docker"
+2) SSH into Virtual Machine (```ssh user@ipaddress```)
+	1) Input password when prompted
+3) Type the following commands to install Docker Engine
+	1) ```$sudo apt update && sudo apt install -y ca-certificates curl  
+$ sudo install -m 0755 -d /etc/apt/keyrings  
+$ sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \  
+-o /etc/apt/keyrings/docker.asc  
+$ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \  
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \  
+| sudo tee /etc/apt/sources.list.d/docker.list  
+$ sudo apt update  
+$ sudo apt install -y docker-ce docker-ce-cli containerd.io \  
+docker-buildx-plugin docker-compose-plugin
+	   ```
+4) Post Install checks
+	1) ```$ sudo systemctl enable --now docker  
+	   $ systemctl is-enabled docker # enabled  
+	   $ sudo docker run --rm hello-world  
+	   $ docker compose version```
+5) Choose application to install, I chose Uptime Kuma (https://github.com/louislam/uptime-kuma/wiki/%F0%9F%94%A7-How-to-Install)
+	1) ```sudo mkdir -p /opt/uptime-kuma```
+	2) ```cd /opt/uptime-kuma```
+	3) ``````sudo nano compose.yaml```
+	4) Write: 
+	   ```services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data
+```
+6) Deploy using ```sudo docker compose up -d```
+7) Check status using ```sudo docker ps```
+8) Go to http://[ipaddress]:3001 
+	1) I chose embedded MariaDB
+	2) Make admin account
+9) Test if it is persistant
+	1) ```sudo reboot``` and SSH back in
+	2) ```sudo docker ps``` (should see Uptime Kuma still up)
+10) Key-only SSH (https://askubuntu.com/questions/346857/how-do-i-force-ssh-to-only-allow-users-with-a-key-to-log-in)
+    1) ```ssh-keygen -t ed25519``` (in another tab not SSH'd into VM)
+    2) ```ssh-copy-id username@VM-IP```
+    3) Open another terminal tab and SSH into the VM again
+    4) Back in the VM, ```sudo nano /etc/ssh/sshd_config```
+    5) Set ```PubkeyAuthentication yes
+PasswordAuthentication no
+UsePAM no```
+	6) ```sudo sshd -t```
+	7) ```sudo systemctl restart ssh```
+11) Firewall
+	1) ```
+sudo apt update
+sudo apt install ufw
+sudo ufw allow OpenSSH
+sudo ufw allow 3001/tcp
+sudo ufw enable
+sudo ufw status verbose
+```
+12) Automatic security updates (https://askubuntu.com/questions/9/how-do-i-enable-automatic-updates)
+    1) ```sudo apt install unattended-upgrades```
+    2) ```sudo dpkg-reconfigure -plow unattended-upgrades``` 
+    3) ```sudo systemctl status unattended-upgrades```
+13) Make backup directory
+	1) ```sudo mkdir -p /opt/backups```
+	2) ```sudo nano /usr/local/bin/backup-uptime-kuma.sh```
+	3)Write: ```
+#!/bin/bash
+set -Eeuo pipefail
+
+APP_DIR="/opt/uptime-kuma"
+BACKUP_DIR="/opt/backups"
+CONTAINER="uptime-kuma"
+
+mkdir -p "$BACKUP_DIR"
+
+WAS_RUNNING=0
+
+if docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; then
+    docker stop "$CONTAINER"
+    WAS_RUNNING=1
+fi
+
+# restart the container
+restart_container() {
+    if [ "$WAS_RUNNING" -eq 1 ]; then
+        docker start "$CONTAINER"
+    fi
+}
+
+trap restart_container EXIT
+
+# Create timestamped archive
+ARCHIVE="$BACKUP_DIR/uptime-kuma-$(date +%Y%m%d-%H%M%S).tar.gz"
+
+tar -czf "$ARCHIVE" -C "$APP_DIR" data
+
+echo "Created backup: $ARCHIVE"
+
+# restart application
+restart_container
+trap - EXIT
+
+# 7 newest archives only
+mapfile -t BACKUPS < <(
+    find "$BACKUP_DIR" -maxdepth 1 -type f \
+        -name 'uptime-kuma-*.tar.gz' -printf '%f\n' |
+        sort -r
+)
+
+for ((i=7; i<${#BACKUPS[@]}; i++)); do
+    rm -- "$BACKUP_DIR/${BACKUPS[$i]}"
+done
+
+echo "Backup complete. Retained ${#BACKUPS[@]} archives."
+```
+	4) ```sudo chmod +x /usr/local/bin/backup-uptime-kuma.sh```
+	5) Execute backup ```sudo /usr/local/bin/backup-uptime-kuma.sh```
+	6) sudo docker ps
+14) Backup on Proxmox
+15) Testing backups
+	1) ```echo "RESTORE TEST SUCCESS" | sudo tee /opt/uptime-kuma/data/restore-test.txt```
+	2) ```cat /opt/uptime-kuma/data/restore-test.txt```
+	3) Backup ```sudo /usr/local/bin/backup-uptime-kuma.sh```
+	4) ```ls -lt /opt/backups/```
+	5) Delete test file ```sudo rm /opt/uptime-kuma/data/restore-test.txt```
+	6) Verify removal ```ls /opt/uptime-kuma/data/restore-test.txt```
+	7) ```sudo tar -xzf /opt/backups/[latest filename from step 15.4].tar.gz -C /opt/uptime-kuma/```
+	8) ```cat /opt/uptime-kuma/data/restore-test.txt```
